@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+script=$0
+while [ -L "$script" ]; do
+    dir=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)
+    target=$(readlink "$script")
+    case "$target" in
+        /*) script=$target ;;
+        *) script=$dir/$target ;;
+    esac
+done
+
+root=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)
+exec python3 "$root/src/hax_web.py" "$@"
