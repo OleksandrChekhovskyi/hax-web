@@ -81,11 +81,37 @@ def display_url(value: object) -> str:
     return urllib.parse.quote(sanitize_text(value), safe=":/?#[]@!$&'()*+,;=%")
 
 
-def truncate(value: object, max_chars: int) -> str:
-    value = sanitize_text(value).strip()
-    if len(value) <= max_chars:
+def demote_excerpt_headings(value: str) -> str:
+    lines = value.splitlines(keepends=True)
+    headings = []
+    fence_char = ""
+    fence_length = 0
+    for index, line in enumerate(lines):
+        fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence is not None:
+            marker = fence.group(1)
+            if not fence_char:
+                fence_char = marker[0]
+                fence_length = len(marker)
+            elif (
+                marker[0] == fence_char
+                and len(marker) >= fence_length
+                and not fence.group(2).strip()
+            ):
+                fence_char = ""
+            continue
+        if fence_char:
+            continue
+        heading = re.match(r"^ {0,3}(#{1,6})(?=[ \t]|$)", line)
+        if heading is not None:
+            headings.append((index, heading.start(1), heading.end(1)))
+
+    if not any(end - start == 1 for _, start, end in headings):
         return value
-    return value[:max_chars].rstrip() + "\n\n[truncated]"
+    for index, start, end in headings:
+        if end - start < 6:
+            lines[index] = lines[index][:start] + "#" + lines[index][start:]
+    return "".join(lines)
 
 
 def split_long_line(line: str, max_bytes: int) -> list[str]:
@@ -275,7 +301,9 @@ def normalize_search(response: JsonObject, query: str) -> SearchData:
         highlights = item.get("highlights")
         if not isinstance(highlights, list):
             highlights = []
-        excerpt = truncate("\n\n".join(x for x in highlights if isinstance(x, str)), 1200)
+        excerpt = sanitize_text(
+            "\n\n".join(x for x in highlights if isinstance(x, str))
+        ).strip()
         results.append(
             {
                 "title": sanitize_text(item.get("title")) or "Untitled",
@@ -305,14 +333,12 @@ def content_error(response: JsonObject, url: str) -> WebError:
     return WebError(f"Exa returned no content for {url}")
 
 
-def normalize_fetch(
-    response: JsonObject, requested_url: str, max_chars: int
-) -> FetchData:
+def normalize_fetch(response: JsonObject, requested_url: str) -> FetchData:
     results = response.get("results")
     if not isinstance(results, list) or not results or not isinstance(results[0], dict):
         raise content_error(response, requested_url)
     item = results[0]
-    content = truncate(item.get("text"), max_chars)
+    content = sanitize_text(item.get("text")).strip()
     if not content:
         raise content_error(response, requested_url)
     return {
@@ -347,15 +373,15 @@ def fetch(api_key: str, url: str, max_chars: int, fresh: bool) -> FetchData:
     if fresh:
         options["maxAgeHours"] = 0
     response = post_json("/contents", options, api_key)
-    return normalize_fetch(response, url, max_chars)
+    return normalize_fetch(response, url)
 
 
 def format_search(data: SearchData) -> str:
-    lines = [f"# Search results: {markdown_label(data['query'])}"]
+    lines = [f"Search results: {markdown_label(data['query'])}"]
     if not data["results"]:
         lines.extend(["", "No results."])
     for index, result in enumerate(data["results"], 1):
-        lines.extend(["", f"## {index}. {markdown_label(result['title'])}"])
+        lines.extend(["", f"# {index}. {markdown_label(result['title'])}"])
         if result["url"]:
             lines.append(f"Source: <{display_url(result['url'])}>")
         if result["published_at"]:
@@ -363,7 +389,7 @@ def format_search(data: SearchData) -> str:
         if result["author"]:
             lines.append(f"Author: {markdown_label(result['author'])}")
         if result["excerpt"]:
-            lines.extend(["", result["excerpt"]])
+            lines.extend(["", demote_excerpt_headings(result["excerpt"])])
     return "\n".join(lines) + "\n"
 
 

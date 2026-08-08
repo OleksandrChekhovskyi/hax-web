@@ -28,8 +28,9 @@ hax-web fetch --fresh "https://example.com/changing-page"
 ```
 
 Fetch returns page metadata followed by extracted Markdown. Search first when no URL is known,
-then fetch only promising results. Use `--fresh` only when cached content may be stale and
-`--max-chars` to limit context. Prefer the Markdown default over `--json` for agent use.
+then fetch only promising results. Use `--fresh` only when cached content may be stale.
+`--max-chars` accepts 1–10,000 (default and maximum: 10,000); use it only to request less
+content. Prefer the Markdown default over `--json` for agent use.
 
 Prefer primary sources, corroborate important claims, and cite the source URLs in the answer.
 Search excerpts may be enough for discovery, but fetch the sources used as substantive evidence.

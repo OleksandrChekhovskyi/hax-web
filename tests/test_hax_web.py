@@ -212,6 +212,13 @@ class SearchTests(unittest.TestCase):
         )
         self.assertEqual(result["results"][0]["excerpt"], "First\n\nSecond")
 
+    def test_search_preserves_provider_highlights(self) -> None:
+        highlight = "x" * 1500
+        result = web.normalize_search(
+            {"results": [{"highlights": [highlight]}]}, "query"
+        )
+        self.assertEqual(result["results"][0]["excerpt"], highlight)
+
     def test_search_rejects_empty_query(self) -> None:
         with self.assertRaisesRegex(web.WebError, "empty"):
             web.search("key", "  ", 5)
@@ -238,6 +245,34 @@ class SearchTests(unittest.TestCase):
         self.assertIn(r"a \# query", output)
         self.assertIn(r"\*title\*", output)
         self.assertIn("https://example.com/a%20b", output)
+        self.assertIn("\nUseful text\n", output)
+
+    def test_excerpt_headings_are_unchanged_without_h1(self) -> None:
+        excerpt = "## Source heading\n\n### Detail"
+        self.assertEqual(web.demote_excerpt_headings(excerpt), excerpt)
+
+    def test_search_demotes_excerpt_headings_below_result_titles(self) -> None:
+        data = {
+            "query": "query",
+            "results": [
+                {
+                    "title": "Result",
+                    "url": "",
+                    "published_at": "",
+                    "author": "",
+                    "excerpt": (
+                        "## Earlier\n\n# Source heading\n\n### Detail\n\n"
+                        "```python\n# code comment\n```\n\n###### Deep"
+                    ),
+                }
+            ],
+        }
+        output = web.format_search(data)
+        self.assertTrue(output.startswith("Search results: query\n"))
+        self.assertIn("\n# 1. Result\n", output)
+        self.assertIn("\n### Earlier\n\n## Source heading\n\n#### Detail\n", output)
+        self.assertIn("```python\n# code comment\n```", output)
+        self.assertIn("\n###### Deep\n", output)
 
     def test_markdown_metadata_cannot_add_lines(self) -> None:
         data = {
@@ -253,8 +288,8 @@ class SearchTests(unittest.TestCase):
             ],
         }
         output = web.format_search(data)
-        self.assertIn("# Search results: real \\#\\# forged\n", output)
-        self.assertIn("## 1. Title --- 1. forged\n", output)
+        self.assertIn("Search results: real \\#\\# forged\n", output)
+        self.assertIn("# 1. Title --- 1. forged\n", output)
         self.assertIn(
             "Source: <https://example.com/a%20b%0ASource:%20%3Chttps://evil.test%3E>\n",
             output,
@@ -273,13 +308,14 @@ class SearchTests(unittest.TestCase):
 
 
 class FetchTests(unittest.TestCase):
-    def test_fetch_sets_limit_and_freshness(self) -> None:
+    def test_fetch_sets_provider_limit_without_local_truncation(self) -> None:
+        content = "x" * 5000
         response = {
             "results": [
                 {
                     "title": "Page",
                     "url": "https://example.com/final",
-                    "text": "Body",
+                    "text": content,
                 }
             ],
             "statuses": [{"id": "https://example.com", "status": "success"}],
@@ -296,7 +332,7 @@ class FetchTests(unittest.TestCase):
             },
             "key",
         )
-        self.assertEqual(result["content"], "Body")
+        self.assertEqual(result["content"], content)
 
     def test_fetch_surfaces_per_url_failure(self) -> None:
         response = {
@@ -310,7 +346,7 @@ class FetchTests(unittest.TestCase):
             ],
         }
         with self.assertRaisesRegex(web.WebError, "CRAWL_NOT_FOUND.*404"):
-            web.normalize_fetch(response, "https://example.com/missing", 10000)
+            web.normalize_fetch(response, "https://example.com/missing")
 
 
 class CliTests(unittest.TestCase):
