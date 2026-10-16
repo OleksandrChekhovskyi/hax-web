@@ -21,7 +21,8 @@ A small, dependency-free Python CLI for web search and content extraction. The f
 On a terminal, Markdown is rendered with `glow` when available; `--no-render` disables it. Piped or
 redirected output stays raw Markdown, and errors go to stderr. Both commands accept `--json` for
 normalized JSON output. Search returns up to five results by default; fetch output is capped at
-10,000 characters by Exa.
+10,000 characters by Exa and ends with a truncation note when it reaches the cap. Code blocks and
+raw HTML blocks that a cut leaves open are closed, so they cannot swallow the rest of the output.
 
 Queries and fetched URLs are sent to Exa. Do not use fetch for private, authenticated, intranet,
 credential-bearing, or signed URLs.

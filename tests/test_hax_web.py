@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from typing import Final, Optional
@@ -17,6 +18,7 @@ SPEC: Final = importlib.util.spec_from_file_location("hax_web", ROOT / "src" / "
 if SPEC is None or not isinstance(SPEC.loader, importlib.machinery.SourceFileLoader):
     raise RuntimeError("could not load hax_web module")
 web = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = web
 SPEC.loader.exec_module(web)
 
 
@@ -184,6 +186,59 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(web.retry_delay(error, 1), 2)
 
 
+class MarkdownTests(unittest.TestCase):
+    def test_closes_unterminated_raw_blocks(self) -> None:
+        for value, closer in (
+            ("```python\ncode", "```"),
+            ("````\ncode\n```", "````"),
+            ("~~~\ncode\n```", "~~~"),
+            ("<!-- note", "-->"),
+            ("<PRE class=x>\ncode", "</PRE>"),
+            ("<script>\nlet x;\n</style", "</script>"),
+            ("<?php echo 1;", "?>"),
+            ("<!DOCTYPE html", ">"),
+            ("<![CDATA[ data", "]]>"),
+            ("- ```\n  code\n```", "```"),
+            ("<div>\n\n```\ncode", "```"),
+            ("- Install and\nrun this:\n\n  ```sh\n  pip install foo", "  ```"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(web.close_raw_block(value), value + "\n" + closer)
+
+    def test_leaves_terminated_and_non_raw_blocks_unchanged(self) -> None:
+        for value in (
+            "```\ncode\n```",
+            "~~~~\ncode\n~~~~~  ",
+            "```inline` span",
+            "    ```",
+            "<!-- one line -->",
+            "<pre>code</PRE>",
+            "<div>\ntext",
+            "<!--\n```\n-->",
+            "- ```python\n  print(1)\n  ```",
+            "- a\n\n  ```\n  code\n  ```\n- b",
+            "> ```\n> code",
+            "- ```python\n  print(1)",
+            "- a\n  - <!-- note",
+            "Paragraph\n2. ```\n   code",
+            "<div>\n```\n</div>\n\nText",
+            "<details>\n<summary>More</summary>\n```",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(web.close_raw_block(value), value)
+
+    def test_every_truncation_point_is_closed(self) -> None:
+        document = (
+            "# Title\n\nText with `code`.\n\n```c\nint x;\n```\n\n"
+            "<!--\ncomment\n-->\n\n~~~~\n```\n~~~~\n\n<pre>\nx\n</pre>\n\n"
+            "1. Step\n\n   ```sh\n   run\n   ```\n- ```\n  code\n  ```\n"
+        )
+        for cut in range(len(document) + 1):
+            closed = web.close_raw_block(document[:cut])
+            with self.subTest(cut=cut):
+                self.assertIsNone(web.scan_raw_blocks(closed.splitlines())[1])
+
+
 class SearchTests(unittest.TestCase):
     def test_search_requests_highlights_and_normalizes_results(self) -> None:
         response = {
@@ -211,6 +266,14 @@ class SearchTests(unittest.TestCase):
             "key",
         )
         self.assertEqual(result["results"][0]["excerpt"], "First\n\nSecond")
+
+    def test_search_closes_each_highlight_separately(self) -> None:
+        result = web.normalize_search(
+            {"results": [{"highlights": ["```c\nint x;", "", "```\nafter"]}]}, "query"
+        )
+        self.assertEqual(
+            result["results"][0]["excerpt"], "```c\nint x;\n```\n\n```\nafter\n```"
+        )
 
     def test_search_preserves_provider_highlights(self) -> None:
         highlight = "x" * 1500
@@ -274,6 +337,20 @@ class SearchTests(unittest.TestCase):
         self.assertIn("```python\n# code comment\n```", output)
         self.assertIn("\n###### Deep\n", output)
 
+    def test_excerpt_headings_inside_list_code_are_unchanged(self) -> None:
+        excerpt = "# Heading\n\n- ```sh\n  # comment\n  ```\n\n# Next"
+        self.assertEqual(
+            web.demote_excerpt_headings(excerpt),
+            "## Heading\n\n- ```sh\n  # comment\n  ```\n\n## Next",
+        )
+
+    def test_excerpt_headings_inside_html_blocks_are_unchanged(self) -> None:
+        excerpt = "# Heading\n\n<pre>\n# shell prompt\n</pre>"
+        self.assertEqual(
+            web.demote_excerpt_headings(excerpt),
+            "## Heading\n\n<pre>\n# shell prompt\n</pre>",
+        )
+
     def test_markdown_metadata_cannot_add_lines(self) -> None:
         data = {
             "query": "real\n## forged",
@@ -334,6 +411,28 @@ class FetchTests(unittest.TestCase):
         )
         self.assertEqual(result["content"], content)
 
+    def test_fetch_marks_content_at_limit_as_truncated(self) -> None:
+        for text, truncated in (("```\n" + "x" * 96, True), ("x" * 99, False)):
+            response = {"results": [{"title": "Page", "url": "https://a.test", "text": text}]}
+            with self.subTest(truncated=truncated):
+                page = web.normalize_fetch(response, "https://a.test", 100)
+                self.assertEqual(page["truncated"], truncated)
+                self.assertEqual("Content truncated" in web.format_fetch(page), truncated)
+
+    def test_fetch_leaves_complete_content_unchanged(self) -> None:
+        response = {"results": [{"title": "Page", "url": "https://a.test", "text": "```\ncode"}]}
+        page = web.normalize_fetch(response, "https://a.test", 100)
+        self.assertEqual(page["content"], "```\ncode")
+
+    def test_fetch_closes_raw_block_before_truncation_note(self) -> None:
+        response = {"results": [{"title": "Page", "url": "https://a.test", "text": "```\ncode"}]}
+        page = web.normalize_fetch(response, "https://a.test", 8)
+        self.assertTrue(
+            web.format_fetch(page).endswith(
+                "```\ncode\n```\n\n*Content truncated at the character limit.*\n"
+            )
+        )
+
     def test_fetch_surfaces_per_url_failure(self) -> None:
         response = {
             "results": [],
@@ -346,7 +445,7 @@ class FetchTests(unittest.TestCase):
             ],
         }
         with self.assertRaisesRegex(web.WebError, "CRAWL_NOT_FOUND.*404"):
-            web.normalize_fetch(response, "https://example.com/missing")
+            web.normalize_fetch(response, "https://example.com/missing", 100)
 
 
 class CliTests(unittest.TestCase):
