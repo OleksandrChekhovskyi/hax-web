@@ -1,15 +1,12 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env python3
 
-script=$0
-while [ -L "$script" ]; do
-    dir=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)
-    target=$(readlink "$script")
-    case "$target" in
-        /*) script=$target ;;
-        *) script=$dir/$target ;;
-    esac
-done
+import os
+import sys
 
-root=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)
-exec python3 "$root/src/hax_web.py" "$@"
+# Replace the script's directory with src/ alone. `python3 -m` would put the working directory on
+# the path instead, where any file named like a module this program imports would shadow it.
+sys.path[0] = os.path.join(os.path.dirname(os.path.realpath(__file__)), "src")
+
+from hax_web.cli import run  # noqa: E402
+
+run()

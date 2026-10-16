@@ -45,6 +45,15 @@ the skill.
 python3 -m unittest discover -s tests -v
 ```
 
+## Adding a provider
+
+Providers live in `src/hax_web/`, one module each, with `exa.py` as the reference. A provider
+exports `search(query, limit)` and `fetch(url, max_chars, fresh)`, which return the `SearchData`
+and `FetchData` shapes defined in `__init__.py`; reads its own API key from the environment; and
+sends requests through `transport.post_json`. Keep it standard-library only, and test it in
+`tests/test_<provider>.py`. Exa is the only provider so far, so `cli.py` calls it directly; the
+second provider adds the choice between them there.
+
 ## License
 
 [MIT](LICENSE)
