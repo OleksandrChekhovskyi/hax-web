@@ -3,12 +3,12 @@ from __future__ import annotations
 import os
 from typing import Final, Optional
 
-from . import Provider, WebError, codex, exa
+from . import Provider, WebError, codex, deepseek, exa
 
 PROVIDER_ENV: Final = "HAX_WEB_PROVIDER"
 
 # Auto-detection picks the first available provider in this order.
-PROVIDERS: Final[dict[str, Provider]] = {"exa": exa, "codex": codex}
+PROVIDERS: Final[dict[str, Provider]] = {"exa": exa, "deepseek": deepseek, "codex": codex}
 
 
 def requested_provider(flag: Optional[str]) -> Optional[str]:

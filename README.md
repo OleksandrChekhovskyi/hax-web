@@ -31,11 +31,15 @@ authenticated, intranet, credential-bearing, or signed URLs.
 | Name | Credentials |
 | --- | --- |
 | `exa` | [Exa](https://exa.ai) API key in `EXA_API_KEY` |
+| `deepseek` | [DeepSeek](https://platform.deepseek.com) API key in `DEEPSEEK_API_KEY` |
 | `codex` | ChatGPT login from hax (`/login`) or the [Codex CLI](https://github.com/openai/codex) |
 
 hax-web uses the first provider in the table whose credentials are present. Set `HAX_WEB_PROVIDER`
 to choose one, or pass `--provider` to `search` or `fetch` for a single run. `./hax-web providers`
 shows which providers are ready and which one is selected.
+
+`deepseek` cannot fetch PDFs, and fetched pages lose links and code formatting; code examples on
+some sites are dropped. `--fresh` has no effect.
 
 `codex` uses the web search behind the Codex CLI, through an endpoint OpenAI does not document; it
 may change or stop working without notice. hax-web never renews the login itself: when it expires,
