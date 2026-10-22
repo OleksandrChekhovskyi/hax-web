@@ -1,12 +1,12 @@
 # hax-web
 
-A small, dependency-free Python CLI for web search and content extraction. The first provider is
-[Exa](https://exa.ai).
+A small, dependency-free Python CLI for web search and content extraction, with a choice of
+[providers](#providers).
 
 ## Requirements
 
 - Python 3.9 or newer
-- `EXA_API_KEY` in the environment
+- Credentials for at least one provider
 - Optional: [`glow`](https://github.com/charmbracelet/glow) for interactive rendering
 
 ## Usage
@@ -21,11 +21,27 @@ A small, dependency-free Python CLI for web search and content extraction. The f
 On a terminal, Markdown is rendered with `glow` when available; `--no-render` disables it. Piped or
 redirected output stays raw Markdown, and errors go to stderr. Both commands accept `--json` for
 normalized JSON output. Search returns up to five results by default; fetch output is capped at
-10,000 characters by Exa and ends with a truncation note when it reaches the cap. Code blocks and
-raw HTML blocks that a cut leaves open are closed, so they cannot swallow the rest of the output.
+10,000 characters and ends with a truncation note when it reaches the cap.
 
-Queries and fetched URLs are sent to Exa. Do not use fetch for private, authenticated, intranet,
-credential-bearing, or signed URLs.
+Queries and fetched URLs are sent to the selected provider. Do not use fetch for private,
+authenticated, intranet, credential-bearing, or signed URLs.
+
+## Providers
+
+| Name | Credentials |
+| --- | --- |
+| `exa` | [Exa](https://exa.ai) API key in `EXA_API_KEY` |
+| `codex` | ChatGPT login from hax (`/login`) or the [Codex CLI](https://github.com/openai/codex) |
+
+hax-web uses the first provider in the table whose credentials are present. Set `HAX_WEB_PROVIDER`
+to choose one, or pass `--provider` to `search` or `fetch` for a single run. `./hax-web providers`
+shows which providers are ready and which one is selected.
+
+`codex` uses the web search behind the Codex CLI, through an endpoint OpenAI does not document; it
+may change or stop working without notice. hax-web never renews the login itself: when it expires,
+use the codex provider in hax or run `codex` to renew it. Search results show publication dates as
+ages such as "5 months ago" and omit authors. Fetched pages include the site's navigation and lose
+link targets, and `--fresh` has no effect.
 
 ## Source installation
 
@@ -44,15 +60,6 @@ the skill.
 ```sh
 python3 -m unittest discover -s tests -v
 ```
-
-## Adding a provider
-
-Providers live in `src/hax_web/`, one module each, with `exa.py` as the reference. A provider
-exports `search(query, limit)` and `fetch(url, max_chars, fresh)`, which return the `SearchData`
-and `FetchData` shapes defined in `__init__.py`; reads its own API key from the environment; and
-sends requests through `transport.post_json`. Keep it standard-library only, and test it in
-`tests/test_<provider>.py`. Exa is the only provider so far, so `cli.py` calls it directly; the
-second provider adds the choice between them there.
 
 ## License
 

@@ -6,8 +6,9 @@ import sys
 from collections.abc import Sequence
 from typing import Optional
 
-from . import VERSION, WebError, exa
+from . import VERSION, WebError
 from .output import format_fetch, format_search, write_markdown
+from .providers import PROVIDER_ENV, PROVIDERS, describe_providers, select_provider
 from .urls import validate_public_url
 
 
@@ -23,40 +24,48 @@ def positive_int(value: str, maximum: int) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="hax-web", description="Search and fetch the web via Exa."
+        prog="hax-web", description="Search the web and fetch pages as Markdown."
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--provider", choices=PROVIDERS, help=f"override {PROVIDER_ENV} and auto-detection"
+    )
+    common.add_argument("--json", action="store_true", help="write normalized JSON")
+    common.add_argument("--no-render", action="store_true", help="do not invoke glow")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    search_parser = commands.add_parser("search", help="search the web")
+    search_parser = commands.add_parser("search", parents=[common], help="search the web")
     search_parser.add_argument("query")
     search_parser.add_argument(
         "-n", "--limit", type=lambda value: positive_int(value, 20), default=5
     )
-    search_parser.add_argument("--json", action="store_true", help="write normalized JSON")
-    search_parser.add_argument("--no-render", action="store_true", help="do not invoke glow")
 
-    fetch_parser = commands.add_parser("fetch", help="fetch a URL as Markdown")
+    fetch_parser = commands.add_parser("fetch", parents=[common], help="fetch a URL as Markdown")
     fetch_parser.add_argument("url")
     fetch_parser.add_argument(
         "--max-chars", type=lambda value: positive_int(value, 10000), default=10000
     )
     fetch_parser.add_argument("--fresh", action="store_true", help="request a live crawl")
-    fetch_parser.add_argument("--json", action="store_true", help="write normalized JSON")
-    fetch_parser.add_argument("--no-render", action="store_true", help="do not invoke glow")
+
+    commands.add_parser("providers", help="list providers and show which one is selected")
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = build_parser().parse_args(argv)
+    if args.command == "providers":
+        sys.stdout.write(describe_providers())
+        return
+    provider = select_provider(args.provider)
     if args.command == "search":
-        data = exa.search(args.query, args.limit)
+        data = provider.search(args.query, args.limit)
         rendered = (
             json.dumps(data, ensure_ascii=False, indent=2) if args.json else format_search(data)
         )
     else:
         url = validate_public_url(args.url)
-        data = exa.fetch(url, args.max_chars, args.fresh)
+        data = provider.fetch(url, args.max_chars, args.fresh)
         rendered = (
             json.dumps(data, ensure_ascii=False, indent=2) if args.json else format_fetch(data)
         )

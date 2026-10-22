@@ -20,7 +20,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"AI_AGENT": "hax"}):
             with mock.patch.object(exa, "search", return_value=result):
                 with mock.patch("sys.stdout", stdout):
-                    cli.main(["search", "q", "--json"])
+                    cli.main(["search", "q", "--json", "--provider", "exa"])
         self.assertEqual(json.loads(stdout.getvalue()), result)
 
     def test_launcher_works_through_symlink(self) -> None:

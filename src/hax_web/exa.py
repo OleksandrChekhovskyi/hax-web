@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Final
+from typing import Final, Optional
 
 from . import FetchData, JsonObject, SearchData, SearchResult, WebError
 from .markdown import close_raw_block
@@ -11,11 +11,15 @@ from .transport import post_json
 API_BASE: Final = "https://api.exa.ai"
 
 
+def unavailable() -> Optional[str]:
+    return None if os.environ.get("EXA_API_KEY") else "EXA_API_KEY is not set"
+
+
 def post(path: str, payload: JsonObject) -> JsonObject:
-    api_key = os.environ.get("EXA_API_KEY")
-    if not api_key:
-        raise WebError("EXA_API_KEY is not set")
-    return post_json(API_BASE + path, payload, {"x-api-key": api_key}, "Exa")
+    reason = unavailable()
+    if reason is not None:
+        raise WebError(reason)
+    return post_json(API_BASE + path, payload, {"x-api-key": os.environ["EXA_API_KEY"]}, "Exa")
 
 
 def normalize_search(response: JsonObject, query: str) -> SearchData:
